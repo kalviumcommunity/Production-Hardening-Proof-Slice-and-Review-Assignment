@@ -40,18 +40,30 @@ The breaker must:
 - increment `metrics.breaker_open_total` on every trip and call `onStateChange(state)` on every
   transition.
 
-## What to submit
+---
 
-Open a pull request on a branch named `production-hardening-slice`, and in your README include these
-labelled sections:
+## Production Hardening Proof Slice Submission
 
-1. **Risk addressed**
-2. **Chosen control**
-3. **How to run / test**
-4. **Evidence** (a reviewer can confirm it works without reading all your code)
-5. **Observability note** (which metric moves and which state changes are logged)
-6. **Trade-off**
-7. **Remaining risk**
-8. **How this production control protects my Modules 1–3 design**
+### 1. Risk addressed
+Prevents cascading failures, resource starvation, and latency spikes caused by continuously sending doomed calls to a degraded or unavailable downstream model provider.
 
-Submit the pull-request URL.
+### 2. Chosen control
+Implemented a three-state circuit breaker (`CLOSED`, `OPEN`, `HALF_OPEN`) with threshold-based tripping, fast short-circuiting, and probe-based recovery in [`src/circuitBreaker.js`](./src/circuitBreaker.js), integrated into [`src/replyService.js`](./src/replyService.js).
+
+### 3. How to run / test
+Run `node --test` in the project root. Expected result: all 8 tests pass with zero failures.
+
+### 4. Evidence
+Unit tests in [`test/circuitBreaker.test.js`](./test/circuitBreaker.test.js) and integration tests in [`test/replyService.test.js`](./test/replyService.test.js) verify threshold detection, fast failure without calling the provider, probe recovery, and graceful fallback to queued human support (`reason: 'circuit_open'`).
+
+### 5. Observability note
+Exposes `metrics.breaker_open_total` (increments on trip/re-open), `metrics.short_circuited_total` (increments on blocked calls), and dispatches transitions (`OPEN`, `HALF_OPEN`, `CLOSED`) via `onStateChange(state)` without exposing sensitive payloads or tokens.
+
+### 6. Trade-off
+During the `openMillis` cooldown, requests are immediately short-circuited to fallback replies even if the upstream provider temporarily recovers before the next probe.
+
+### 7. Remaining risk
+In-memory counters and states are local to the current process instance and do not guard against slow upstream requests that hang without throwing an error (requires complementary timeout/deadline controls).
+
+### 8. How this production control protects my Modules 1–3 design
+Protects PromptPilot's asynchronous ticket processing pipeline and human-in-the-loop fallback mechanism from upstream model outages, preserving SLA responsiveness.

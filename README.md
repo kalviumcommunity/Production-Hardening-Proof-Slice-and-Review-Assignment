@@ -55,3 +55,20 @@ labelled sections:
 8. **How this production control protects my Modules 1–3 design**
 
 Submit the pull-request URL.
+
+# Starter — Circuit Breaker Proof Slice (PromptPilot)
+
+## Risk addressed
+
+PromptPilot depends on an external model provider. Sustained provider failures could cause repeated doomed calls, increasing latency and spreading the failure to the service.
+
+## Chosen control
+
+Implemented a circuit breaker in `src/circuitBreaker.js`. It opens after the configured failure threshold, short-circuits calls while open, and uses a half-open probe to recover.
+
+## How to run / test
+
+Requires Node.js 18 or newer.
+
+```bash
+node --test

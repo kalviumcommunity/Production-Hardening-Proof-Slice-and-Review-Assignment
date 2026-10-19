@@ -55,3 +55,33 @@ labelled sections:
 8. **How this production control protects my Modules 1–3 design**
 
 Submit the pull-request URL.
+
+
+# Production Hardening Proof Slice
+
+## Risk
+A failing PromptPilot dependency can cause repeated slow or unsuccessful requests, consuming resources and degrading service availability.
+
+## Control
+Implemented a circuit breaker with CLOSED, OPEN, and HALF-OPEN states. It stops forwarding requests after the configured failure threshold and permits a recovery probe after the cooldown.
+
+## Run / Test
+Run the project's documented test command. The expected result is that all circuit-breaker tests pass.
+
+## Evidence
+Automated tests verify normal operation, threshold-based opening, fast rejection while OPEN, and recovery after the cooldown.
+
+## Observability
+A `breaker_open_total` counter tracks breaker activations, and a structured `circuit_breaker_open` log event records the activation without sensitive request data.
+
+## Trade-off
+The circuit breaker introduces state management, cooldown configuration, and the possibility of temporarily rejecting requests while a dependency is recovering.
+
+## Remaining Risk
+The breaker does not fix the underlying dependency failure or guarantee that requests succeed. Timeouts, suitable fallback behavior, and dependency health monitoring remain necessary.
+
+## How This Production Control Protects My Modules 1–3 Design
+The circuit breaker protects the service's dependency boundary and availability assumptions by preventing repeated calls to an unhealthy dependency from exhausting resources.
+
+## How to Verify
+Run the documented automated tests and inspect the test output for successful assertions covering breaker activation, rejection, and recovery.

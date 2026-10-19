@@ -57,31 +57,34 @@ labelled sections:
 Submit the pull-request URL.
 
 
-# Production Hardening Proof Slice
+## Risk addressed
 
-## Risk
-A failing PromptPilot dependency can cause repeated slow or unsuccessful requests, consuming resources and degrading service availability.
+When PromptPilot's external model provider fails repeatedly, requests can continue hitting the failing dependency and degrade service availability.
 
-## Control
-Implemented a circuit breaker with CLOSED, OPEN, and HALF-OPEN states. It stops forwarding requests after the configured failure threshold and permits a recovery probe after the cooldown.
+## Chosen control
 
-## Run / Test
-Run the project's documented test command. The expected result is that all circuit-breaker tests pass.
+Implemented a circuit breaker in `src/circuitBreaker.js` with CLOSED, OPEN, and HALF_OPEN states. It opens at the configured failure threshold, rejects calls during the cooldown, and permits one recovery probe.
+
+## How to run / test
+
+Run `node --test` from the repository root. Expected result: all supplied circuit-breaker and reply-service tests pass.
 
 ## Evidence
-Automated tests verify normal operation, threshold-based opening, fast rejection while OPEN, and recovery after the cooldown.
 
-## Observability
-A `breaker_open_total` counter tracks breaker activations, and a structured `circuit_breaker_open` log event records the activation without sensitive request data.
+`test/circuitBreaker.test.js` verifies the failure threshold, short-circuiting without invoking the provider, successful recovery, failed-probe re-opening, and state-change notifications. `test/replyService.test.js` verifies the reply service integration.
+
+## Observability note
+
+The `breaker_open_total` and `short_circuited_total` counters expose breaker activations and rejected calls. The `onStateChange(state)` callback exposes transitions to CLOSED, OPEN, and HALF_OPEN so the caller can record them.
 
 ## Trade-off
-The circuit breaker introduces state management, cooldown configuration, and the possibility of temporarily rejecting requests while a dependency is recovering.
 
-## Remaining Risk
-The breaker does not fix the underlying dependency failure or guarantee that requests succeed. Timeouts, suitable fallback behavior, and dependency health monitoring remain necessary.
+The breaker adds state management and cooldown configuration. During an outage, requests may receive a fallback instead of a model-generated reply.
 
-## How This Production Control Protects My Modules 1–3 Design
-The circuit breaker protects the service's dependency boundary and availability assumptions by preventing repeated calls to an unhealthy dependency from exhausting resources.
+## Remaining risk
 
-## How to Verify
-Run the documented automated tests and inspect the test output for successful assertions covering breaker activation, rejection, and recovery.
+The breaker does not repair the provider, guarantee successful requests, or replace request timeouts. Production deployment should also configure timeouts and monitor provider health.
+
+## How this production control protects my Modules 1–3 design
+
+The breaker protects PromptPilot's external dependency boundary and preserves the reply workflow by preventing repeated calls to a failing provider. The existing reply service returns a safe fallback when the circuit is open or the provider fails.

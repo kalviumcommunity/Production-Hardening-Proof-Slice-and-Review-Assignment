@@ -29,6 +29,9 @@ class CircuitOpenError extends Error {
 function createCircuitBreaker(options = {}) {
   const now = options.now ?? Date.now;
   const onStateChange = options.onStateChange ?? function () {};
+  const failureThreshold = options.failureThreshold ?? 0.5;
+  const minimumRequests = options.minimumRequests ?? 5;
+  const openMillis = options.openMillis ?? 30_000;
 
   const metrics = {
     breaker_open_total: 0,
@@ -38,12 +41,62 @@ function createCircuitBreaker(options = {}) {
   };
 
   let state = 'CLOSED';
+  let calls = 0;
+  let failures = 0;
+  let openedAt = 0;
+
+  function transitionTo(nextState) {
+    state = nextState;
+    if (state === 'OPEN') {
+      openedAt = now();
+      metrics.breaker_open_total++;
+    }
+    onStateChange(state);
+  }
 
   async function exec(fn) {
-    // TODO: Replace this pass-through with real circuit-breaker logic so that
-    // the supplied tests pass. Right now every call goes straight through and
-    // the breaker never opens.
-    return fn();
+    if (state === 'OPEN') {
+      if (now() - openedAt < openMillis) {
+        metrics.short_circuited_total++;
+        throw new CircuitOpenError();
+      }
+      transitionTo('HALF_OPEN');
+    } else if (state === 'HALF_OPEN') {
+      metrics.short_circuited_total++;
+      throw new CircuitOpenError();
+    }
+
+    const isProbe = state === 'HALF_OPEN';
+    if (!isProbe) {
+      calls++;
+    }
+
+    let result;
+    try {
+      result = await fn();
+    } catch (error) {
+      metrics.failure_total++;
+      if (isProbe) {
+        transitionTo('OPEN');
+      } else {
+        failures++;
+        if (
+          calls >= minimumRequests &&
+          failures / calls >= failureThreshold
+        ) {
+          transitionTo('OPEN');
+        }
+      }
+      throw error;
+    }
+
+    metrics.success_total++;
+    if (isProbe) {
+      calls = 0;
+      failures = 0;
+      transitionTo('CLOSED');
+    }
+    return result;
   }
 
   return {
